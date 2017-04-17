@@ -1,11 +1,10 @@
 import pickle
 import tensorflow as tf
 import numpy as np
-import tf_util
+import data_collection.tf_util as tf_util
 import gym
-import load_policy
+import data_collection.load_policy as load_policy
 
-sess = tf.Session()
 tf.logging.set_verbosity(tf.logging.ERROR)
 
 env_names = ['Ant-v1', 'HalfCheetah-v1', 'Hopper-v1', 'Humanoid-v1', 'Reacher-v1', 'Walker2d-v1']
@@ -65,10 +64,10 @@ def train_model(observations, actions, NUM_EPOCHS=45):
             _, loss_value = sess.run([train_op, loss], feed_dict={input_tensor: in_batch, labels_tensor: out_batch})
             cumulative_loss += loss_value
 
-        # if (epoch+1) % 10 == 0:
-        #     print("Epoch: %i/%i; Loss: %.3f"%(epoch+1, NUM_EPOCHS, cumulative_loss / N))
+        if (epoch+1) % 10 == 0:
+            print("Epoch: %i/%i; Loss: %.3f"%(epoch+1, NUM_EPOCHS, cumulative_loss / N))
 
-    predictions = sess.run([output_tensor], feed_dict={input_tensor: observations})
+    # predictions = sess.run([output_tensor], feed_dict={input_tensor: observations})
     return input_tensor, output_tensor
 
 def generate_rollouts(input_tensor, output_tensor, env_name, num_rollouts=1):
@@ -123,145 +122,27 @@ def dagger(observations, actions, env_name, total_size, max_rollouts=60, logging
 
     return test_model(input_tensor, output_tensor, env_name)
 
-def main_bc():
-    results = ''
-    for env_name in env_names:
-        with open('data/'+env_name+'_data.pkl', 'rb') as f:
-            train_data = pickle.load(f)
 
-        observations = train_data['observations'].squeeze()
-        actions = train_data['actions'].squeeze()
-
-        print("Training model for %s"%env_name)
-
-        input_tensor, output_tensor = train_model(observations, actions)
-
-        print("Testing %s in environment"%env_name)
-        mean, sd = test_model(input_tensor, output_tensor, env_name)
-        expert_mean, expert_sd = np.mean(train_data['returns']), np.std(train_data['returns'])
-        
-        result_string = "%s\n\tExpert Mean:%.3f\n\tExpert SD:%.3f\n\tBC Mean:%.3f\n\tBC SD:%.3f"%(env_name, expert_mean, expert_sd, mean, sd)
-        print(result_string)
-        results += result_string + '\n'
-
-    with open('bc_results.txt', 'w') as f:
-        f.write(results)
-
-def main_dagger():
-    results = ''
-    for env_name in env_names:
-        with open('data/'+env_name+'_data.pkl', 'rb') as f:
-            train_data = pickle.load(f)
-
-        observations = train_data['observations'].squeeze()[:DAGGER_STARTING_N, :]
-        actions = train_data['actions'].squeeze()[:DAGGER_STARTING_N, :]
-
-        with sess.as_default():
-            mean, sd = dagger(observations, actions, env_name, 45000)
-            expert_mean, expert_sd = np.mean(train_data['returns']), np.std(train_data['returns'])
-            result_string = "%s\n\tExpert Mean:%.3f\n\tExpert SD:%.3f\n\tDagger Mean:%.3f\n\tDagger SD:%.3f"%(env_name, expert_mean, expert_sd, mean, sd)
-            print(result_string)
-            results += result_string + '\n'
-
-    with open('dagger_results.txt', 'w') as f:
-        f.write(results)
-
-def main_humanoid():
-    with open('data/Humanoid-v1_data.pkl', 'rb') as f:
-            train_data = pickle.load(f)
-
-    observations = train_data['observations'].squeeze()
-    actions = train_data['actions'].squeeze()
-
-    means = []
-    sds = []
-
-    for i in range(3, 25):
-        input_tensor, output_tensor = train_model(observations, actions, i*10)
-        mean, sd = test_model(input_tensor, output_tensor, 'Humanoid-v1')
-        print("%i Epochs: Mean=%.3f; SD=%.3f"%(i*10, mean, sd))
-        means.append(mean)
-        sds.append(sd)
-    return means, sds
-
-def main_humanoid_dagger():
-    with open('data/Humanoid-v1_data.pkl', 'rb') as f:
-            train_data = pickle.load(f)
-
-    with sess.as_default():
-        observations = train_data['observations'].squeeze()[:30000,:]
-        actions = train_data['actions'].squeeze()[:30000,:]
-
-        expert_policy = load_policy.load_policy('experts/Humanoid-v1.pkl')
-        rollouts, max_rollouts = 0, 15
-        while rollouts < max_rollouts:
-            assert observations.shape[0] == actions.shape[0], "Must have same number of observations and actions"
-            input_tensor, output_tensor = train_model(observations, actions, 200)
-            new_observations, _, _ = generate_rollouts(input_tensor, output_tensor, 'Humanoid-v1', 1)
-            labeled_actions = expert_policy(new_observations)
-            
-            observations = np.vstack((observations, new_observations))
-            actions = np.vstack((actions, labeled_actions))
-
-            print 
-            rollouts += 1
-            if rollouts > 0 and rollouts % 5 == 0:
-                print("Dagger Iterations:", rollouts, test_model(input_tensor, output_tensor, 'Humanoid-v1'))
-
-    return test_model(input_tensor, output_tensor, env_name)
-
-def q2_2():
-    envs = ['Ant-v1', 'Hopper-v1']
-    for env_name in envs:
-        with open('data/'+env_name+'_data.pkl', 'rb') as f:
-            train_data = pickle.load(f)
-
-        observations = train_data['observations'].squeeze()
-        actions = train_data['actions'].squeeze()
-
-        print("Training model for %s"%env_name)
-
-        input_tensor, output_tensor = train_model(observations, actions)
-
-        print("Testing %s in environment"%env_name)
-        mean, sd = test_model(input_tensor, output_tensor, env_name)
-        expert_mean, expert_sd = np.mean(train_data['returns']), np.std(train_data['returns'])
-        
-        result_string = "%s\n\tExpert Mean:%.3f\n\tExpert SD:%.3f\n\tBC Mean:%.3f\n\tBC SD:%.3f"%(env_name, expert_mean, expert_sd, mean, sd)
-        print(result_string)        
-
-def q2_3():
-    main_humanoid()
-
-def q3_2():
-    env_name = 'Walker2d-v1'
-    with open('data/'+env_name+'_data.pkl', 'rb') as f:
-        train_data = pickle.load(f)
-
-    observations = train_data['observations'].squeeze()[:DAGGER_STARTING_N, :]
-    actions = train_data['actions'].squeeze()[:DAGGER_STARTING_N, :]
-
-    with sess.as_default():
-        mean, sd = dagger(observations, actions, env_name, 45000, logging=True)
-        expert_mean, expert_sd = np.mean(train_data['returns']), np.std(train_data['returns'])
-        result_string = "%s\n\tExpert Mean:%.3f\n\tExpert SD:%.3f\n\tDagger Mean:%.3f\n\tDagger SD:%.3f"%(env_name, expert_mean, expert_sd, mean, sd)
-        print(result_string)
 
 if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--q2_2', action='store_true')
-    parser.add_argument('--q2_3', action='store_true')
-    parser.add_argument('--q3_2', action='store_true')
-    args = parser.parse_args()
+    data = []
+    with open('../data/half_cheetah_sub_expert_0.pkl', 'rb') as f:
+        data.append(pickle.load(f))
+    with open('../data/half_cheetah_sub_expert_1.pkl', 'rb') as f:
+        data.append(pickle.load(f))
+    with open('../data/half_cheetah_sub_expert_2.pkl', 'rb') as f:
+        data.append(pickle.load(f))
+    with open('../data/half_cheetah_sub_expert_3.pkl', 'rb') as f:
+        data.append(pickle.load(f))
 
-    if args.q2_2:
-        q2_2()
-    if args.q2_3:
-        q2_3()
-    if args.q3_2:
-        q3_2()
-
+    for i in range(4):
+        with tf.Session() as sess:
+            data_i = data[i]
+            observations = data_i['observations'].squeeze()
+            actions = data_i['actions'].squeeze()
+            input_tensor, output_tensor = train_model(observations, actions, NUM_EPOCHS=60)
+            saver = tf.train.Saver()
+            saver.save(sess, '../data/models/model{}/model.ckpt'.format(i))
 
 
 
