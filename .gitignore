@@ -89,3 +89,7 @@ ENV/
 .ropeproject
 .DS_Store
 *.pkl
+bin/
+include/
+src/
+pip-selfcheck.json
