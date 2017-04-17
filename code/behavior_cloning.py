@@ -44,7 +44,7 @@ def train_model(observations, actions, NUM_EPOCHS=45):
     output_size = actions.shape[1]
 
     input_tensor, output_tensor = get_model(input_size, output_size)
-    labels_tensor = tf.placeholder(tf.float32, [BATCH_SIZE, output_size])
+    labels_tensor = tf.placeholder(tf.float32, [None, output_size])
 
     loss = tf.reduce_sum(tf.square(labels_tensor - output_tensor))
     optimizer = tf.train.AdamOptimizer()
@@ -135,14 +135,19 @@ if __name__ == '__main__':
     with open('../data/half_cheetah_sub_expert_3.pkl', 'rb') as f:
         data.append(pickle.load(f))
 
-    for i in range(4):
-        with tf.Session() as sess:
-            data_i = data[i]
-            observations = data_i['observations'].squeeze()
-            actions = data_i['actions'].squeeze()
-            input_tensor, output_tensor = train_model(observations, actions, NUM_EPOCHS=60)
-            saver = tf.train.Saver()
-            saver.save(sess, '../data/models/model{}/model.ckpt'.format(i))
+    with tf.Session() as sess:
+        input_tensors, output_tensors = [], []
+        for i in range(4):
+            with tf.variable_scope("model{}".format(i)):
+                data_i = data[i]
+                observations = data_i['observations'].squeeze()
+                actions = data_i['actions'].squeeze()
+                input_tensor, output_tensor = train_model(observations, actions, NUM_EPOCHS=60)
+                input_tensors.append(input_tensor)
+                output_tensors.append(output_tensor)
+
+        saver = tf.train.Saver()
+        saver.save(sess, '../data/models/model.ckpt')
 
 
 
