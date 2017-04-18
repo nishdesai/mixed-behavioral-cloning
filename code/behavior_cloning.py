@@ -14,43 +14,45 @@ DAGGER_STARTING_N = 22000
 def random_tensor(shape):
     return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
 
-def get_model(input_size, output_size):
+def get_model(input_size, output_size, scope=None):
 
     NUM_HIDDEN_UNITS = 128
 
-    input_tensor = tf.placeholder(tf.float32, [None, input_size])
+    with tf.variable_scope(scope):
+        input_tensor = tf.placeholder(tf.float32, [None, input_size])
 
-    #first hidden layer:
-    W_1 = random_tensor([input_size, NUM_HIDDEN_UNITS])
-    b_1 = random_tensor([1, NUM_HIDDEN_UNITS])
-    fc_1 = tf.nn.relu(tf.matmul(input_tensor, W_1) + b_1)
+        #first hidden layer:
+        W_1 = random_tensor([input_size, NUM_HIDDEN_UNITS])
+        b_1 = random_tensor([1, NUM_HIDDEN_UNITS])
+        fc_1 = tf.nn.relu(tf.matmul(input_tensor, W_1) + b_1)
 
-    #second hidden layer:
-    W_2 = random_tensor([NUM_HIDDEN_UNITS, NUM_HIDDEN_UNITS])
-    b_2 = random_tensor([1, NUM_HIDDEN_UNITS])
-    fc_2 = tf.nn.relu(tf.matmul(fc_1, W_2) + b_2)
+        #second hidden layer:
+        W_2 = random_tensor([NUM_HIDDEN_UNITS, NUM_HIDDEN_UNITS])
+        b_2 = random_tensor([1, NUM_HIDDEN_UNITS])
+        fc_2 = tf.nn.relu(tf.matmul(fc_1, W_2) + b_2)
 
-    #output layer
-    W_out = random_tensor([NUM_HIDDEN_UNITS, output_size])
-    b_out = random_tensor([1, output_size])
-    output_tensor = tf.matmul(fc_2, W_out) + b_out
+        #output layer
+        W_out = random_tensor([NUM_HIDDEN_UNITS, output_size])
+        b_out = random_tensor([1, output_size])
+        output_tensor = tf.matmul(fc_2, W_out) + b_out
 
     return input_tensor, output_tensor
 
-def train_model(observations, actions, NUM_EPOCHS=45):
+def train_model(observations, actions, NUM_EPOCHS=45, sess=tf.get_default_session(), scope=''):
     assert observations.shape[0] == actions.shape[0], "Must have same number of observations and actions"
     N = observations.shape[0]
     input_size = observations.shape[1]
     output_size = actions.shape[1]
 
-    input_tensor, output_tensor = get_model(input_size, output_size)
+    input_tensor, output_tensor = get_model(input_size, output_size, scope=scope)
     labels_tensor = tf.placeholder(tf.float32, [None, output_size])
 
     loss = tf.reduce_sum(tf.square(labels_tensor - output_tensor))
     optimizer = tf.train.AdamOptimizer()
     train_op = optimizer.minimize(loss)
 
-    sess.run(tf.global_variables_initializer())
+
+    sess.run(tf.initialize_variables(tf.get_collection(tf.GraphKeys.VARIABLES, scope=scope)))
 
     NUM_BATCHES = int(N / BATCH_SIZE)
     permutation = np.random.permutation(N)
@@ -70,7 +72,7 @@ def train_model(observations, actions, NUM_EPOCHS=45):
     # predictions = sess.run([output_tensor], feed_dict={input_tensor: observations})
     return input_tensor, output_tensor
 
-def generate_rollouts(input_tensor, output_tensor, env_name, num_rollouts=1):
+def generate_rollouts(input_tensor, output_tensor, env_name, num_rollouts=1, sess=tf.get_default_session()):
     env = gym.make(env_name)
     max_steps = env.spec.tags.get('wrapper_config.TimeLimit.max_episode_steps')
 
@@ -97,8 +99,8 @@ def generate_rollouts(input_tensor, output_tensor, env_name, num_rollouts=1):
         returns.append(totalr)
     return np.array(observations), np.array(actions), returns
 
-def test_model(input_tensor, output_tensor, env_name, num_rollouts=45):
-    _, _, returns = generate_rollouts(input_tensor, output_tensor, env_name, num_rollouts)
+def test_model(input_tensor, output_tensor, env_name, num_rollouts=45, sess=tf.get_default_session()):
+    _, _, returns = generate_rollouts(input_tensor, output_tensor, env_name, num_rollouts, sess)
     return np.mean(returns), np.std(returns)
 
 def dagger(observations, actions, env_name, total_size, max_rollouts=60, logging=False):
@@ -145,6 +147,7 @@ if __name__ == '__main__':
                 input_tensor, output_tensor = train_model(observations, actions, NUM_EPOCHS=60)
                 input_tensors.append(input_tensor)
                 output_tensors.append(output_tensor)
+                print(test_model(input_tensor, output_tensor, 'HalfCheetah-v1'))
 
         saver = tf.train.Saver()
         saver.save(sess, '../data/models/model.ckpt')
